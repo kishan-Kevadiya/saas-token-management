@@ -1,0 +1,53 @@
+import { type NextFunction, type Request, type Response } from "express";
+import { verifyToken } from "@/utils/verify-jwt-token";
+import { UserAuthTokenPayload } from "@/types/common.type";
+import { UserResponseDto } from "@/modules/process-token/user-auth/dto/current-user-auth.dto";
+import UserAuthService from "@/modules/process-token/user-auth/user-auth.service";
+
+export const validateProcessTokenAuthUser = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const bearerHeader = req.headers.authorization as string;
+
+    // Check if bearer is undefined
+    if (typeof bearerHeader !== "undefined" && bearerHeader !== "") {
+      // Split the space at the bearer
+      const bearer = bearerHeader.split(" ");
+      // Get token from string
+      const bearerToken = bearer[1];
+      // Verify the token0000000000
+      const decodedToken = verifyToken(bearerToken);
+
+      const decodeTokenWithCounterId = verifyToken(
+        bearerToken
+      ) as UserAuthTokenPayload;
+
+      if (!decodedToken?.sub) {
+        return res.sendStatus(401);
+      }
+
+      const authService = new UserAuthService();
+      const loggedInUser: UserResponseDto | null =
+        await authService.getUserDetailsByHashId(
+          decodedToken.sub,
+          decodeTokenWithCounterId.counter_id,
+          decodeTokenWithCounterId.session_log_id
+        );
+      if (!loggedInUser) {
+        return res.sendStatus(401); // Unauthorized
+      }
+
+      res.locals.currentUser = loggedInUser;
+      console.log("Calling next function from auth middleware");
+      next(); // Continue to the next middleware or route handler
+    } else {
+      return res.sendStatus(401); // Unauthorized
+    }
+  } catch (e) {
+    console.log(e);
+    return res.sendStatus(401); // Unauthorized on error
+  }
+};
