@@ -120,6 +120,7 @@ export default class TokenService {
           token_date: true,
           priority: true,
           created_at: true,
+          time_taken: true
         },
       });
 
@@ -167,6 +168,7 @@ export default class TokenService {
       form_data: formData,
       transfer_counter: null,
       transfer_department: null,
+      time_taken: result.time_taken
     };
 
     console.log("inMemoryToken", inMemoryToken)

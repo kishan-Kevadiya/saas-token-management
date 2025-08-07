@@ -17,21 +17,57 @@ import { HttpBadRequestError } from '@/lib/errors';
 import { SocketNamespace } from '@/enums/socket.enum';
 
 export default class TokenService {
-  // private readonly emailNotificationService: EmailNotificationService;
-  // constructor(emailNotificationService?: EmailNotificationService) {
-  //   this.emailNotificationService =
-  //     emailNotificationService ?? new EmailNotificationService();
-  // }
+
+private getTimeDifference(fromTimeStr: string, toTimeStr?: string): string {
+  const parse = (str: string): Date => {
+    const cleaned = str.replace(/(\.\d{3})\d{3}/, '$1'); 
+    return new Date(cleaned.replace(' ', 'T') + 'Z'); 
+  };
+
+  const fromTime = parse(fromTimeStr);
+  const toTime = toTimeStr ? parse(toTimeStr) : new Date();
+
+  let diffMs = toTime.getTime() - fromTime.getTime();
+  if (diffMs < 0) diffMs = 0;
+
+  const hours = Math.floor(diffMs / 3600000);
+  const minutes = Math.floor((diffMs % 3600000) / 60000);
+  const seconds = Math.floor((diffMs % 60000) / 1000);
+
+  const pad = (n: number) => n.toString().padStart(2, '0');
+
+  return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+}
+
+private addTimeStrings(time1: string, time2: string): string {
+  const [h1, m1, s1] = time1.split(':').map(Number);
+  const [h2, m2, s2] = time2.split(':').map(Number);
+
+  let seconds = s1 + s2;
+  let minutes = m1 + m2 + Math.floor(seconds / 60);
+  let hours = h1 + h2 + Math.floor(minutes / 60);
+
+  seconds = seconds % 60;
+  minutes = minutes % 60;
+
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+}
+
+
+
   private async updateToken(
     tokenId: string,
     status: TokenStatus,
-    reason?: string
+    reason?: string,
+    timeTaken?: string
   ): Promise<any> {
     const now = new Date();
     const updateData: any = {
       token_status: status,
       updated_at: now,
       ...(reason && { reason }),
+      ...(timeTaken && { time_taken: timeTaken }),
     };
 
     if (status === TokenStatus.ACTIVE) updateData.hold_out_time = now;
@@ -66,6 +102,7 @@ export default class TokenService {
     await tokenManager.updateToken(updated.hash_id, {
       token_id: updated.hash_id,
       token_status: updated.token_status,
+      ...(timeTaken && { time_taken: timeTaken }),
     });
 
     const roomName = `company:${updated.company_id}:series:${updated.series_id}`;
@@ -99,9 +136,6 @@ export default class TokenService {
       company: { hash_id: companyHashId, id: companyId },
     } = currentUser;
 
-    console.log('counterHashId------------>', counterHashId);
-
-    // Fetch counter settings, token, department, and counter details in parallel
     const [
       counterSettings,
       tokenDetails,
@@ -181,10 +215,6 @@ export default class TokenService {
       if (
         counterSettings.transfer_token_method === TransferTokenMethod.DIRECT
       ) {
-        console.log(
-          'counterSettings.transfer_counter_id ================????????????????????',
-          counterSettings.transfer_counter_id
-        );
         tokenUpdateData.token_transfer_counter_id =
           counterSettings.transfer_counter_id;
         redisUpdateData.transfer_counter = {
@@ -236,8 +266,7 @@ export default class TokenService {
     } else {
       throw new Error('Invalid transfer_token_wise setting.');
     }
-    console.log('tokenUpdateData ------------------------', tokenUpdateData);
-    console.log('redisUpdateData ========================', redisUpdateData);
+
     await prisma.tokens.update({
       where: { id: tokenDetails.id },
       data: {
@@ -249,17 +278,6 @@ export default class TokenService {
       token_id: tokenId,
       ...redisUpdateData,
     });
-
-    const tokenTransfer = (await tokenManager.getTokens()).filter(
-      (token) => token.token_id === tokenId
-    );
-    console.log(
-      'tokenTransfer =========================================================',
-      tokenTransfer
-    );
-    const tokenData = (await tokenManager.getTokens()).filter(
-      (token) => token.token_id === tokenId
-    );
 
     const roomName = `company:${companyId}:series:${tokenDetails.token_series.id}`;
     this.emitRoomRefresh(tokenId, roomName);
@@ -327,6 +345,11 @@ export default class TokenService {
         if (!counterDetail.transfer_token_next_click) {
 
           if (tokenDetails) {
+            const timeDiff = this.getTimeDifference((tokenDetails.hold_out_time ? tokenDetails.hold_out_time : tokenDetails.token_calling_time).toISOString());
+            const timeTaken = this.addTimeStrings(
+              tokenDetails.time_taken,
+              timeDiff
+            );
             await prisma.tokens.update({
               where: {
                 id: tokenDetails.id,
@@ -334,6 +357,7 @@ export default class TokenService {
               data: {
                 token_status: TokenStatus.COMPLETED,
                 token_out_time: new Date(),
+                time_taken: timeTaken,
                 updated_at: new Date(),
               },
             });
@@ -341,6 +365,7 @@ export default class TokenService {
             await tokenManager.updateToken(tokenDetails.hash_id, {
               token_status: TokenStatus.COMPLETED,
               token_out_time: new Date(),
+              time_taken: timeTaken,
             });
 
             const roomName = `company:${currentUser.company.id}:series:${tokenDetails.series_id}`;
@@ -494,10 +519,21 @@ export default class TokenService {
           );
         }
 
+        const tokenDetail = await tokenManager.getTokenById(tokenDetails.hash_id);
+        if (!tokenDetail || !tokenDetail.token_calling_time) {
+          throw new HttpBadRequestError('Token not found!');
+        }
+        const timeDiff = this.getTimeDifference(tokenDetail.token_calling_time.toISOString())
+        const timeTaken = this.addTimeStrings(
+          tokenDetail.time_taken,
+          timeDiff
+        );
+
         return await this.updateToken(
           tokenDetails.hash_id,
           TokenStatus.HOLD,
-          data.reason
+          data.reason,
+          timeTaken
         );
       }
 

@@ -63,7 +63,8 @@ export interface ITokenData {
   customer_name?: string | null;
   customer_mobile_number?: string | null;
   token_generate_time: Date;
-  form_data?: string
+  form_data?: string;
+  time_taken: string;
 }
 
 
