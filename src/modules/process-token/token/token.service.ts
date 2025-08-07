@@ -15,46 +15,44 @@ import {
 import prisma from '@/lib/prisma';
 import { HttpBadRequestError } from '@/lib/errors';
 import { SocketNamespace } from '@/enums/socket.enum';
+import moment from 'moment';
 
 export default class TokenService {
+  private getTimeDifference(fromTimeStr: string, toTimeStr?: string): string {
+    const parse = (str: string): Date => {
+      const cleaned = str.replace(/(\.\d{3})\d{3}/, '$1');
+      return new Date(cleaned.replace(' ', 'T') + 'Z');
+    };
 
-private getTimeDifference(fromTimeStr: string, toTimeStr?: string): string {
-  const parse = (str: string): Date => {
-    const cleaned = str.replace(/(\.\d{3})\d{3}/, '$1'); 
-    return new Date(cleaned.replace(' ', 'T') + 'Z'); 
-  };
+    const fromTime = parse(fromTimeStr);
+    const toTime = toTimeStr ? parse(toTimeStr) : new Date();
 
-  const fromTime = parse(fromTimeStr);
-  const toTime = toTimeStr ? parse(toTimeStr) : new Date();
+    let diffMs = toTime.getTime() - fromTime.getTime();
+    if (diffMs < 0) diffMs = 0;
 
-  let diffMs = toTime.getTime() - fromTime.getTime();
-  if (diffMs < 0) diffMs = 0;
+    const hours = Math.floor(diffMs / 3600000);
+    const minutes = Math.floor((diffMs % 3600000) / 60000);
+    const seconds = Math.floor((diffMs % 60000) / 1000);
 
-  const hours = Math.floor(diffMs / 3600000);
-  const minutes = Math.floor((diffMs % 3600000) / 60000);
-  const seconds = Math.floor((diffMs % 60000) / 1000);
+    const pad = (n: number) => n.toString().padStart(2, '0');
 
-  const pad = (n: number) => n.toString().padStart(2, '0');
+    return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+  }
 
-  return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
-}
+  private addTimeStrings(time1: string, time2: string): string {
+    const [h1, m1, s1] = time1.split(':').map(Number);
+    const [h2, m2, s2] = time2.split(':').map(Number);
 
-private addTimeStrings(time1: string, time2: string): string {
-  const [h1, m1, s1] = time1.split(':').map(Number);
-  const [h2, m2, s2] = time2.split(':').map(Number);
+    let seconds = s1 + s2;
+    let minutes = m1 + m2 + Math.floor(seconds / 60);
+    let hours = h1 + h2 + Math.floor(minutes / 60);
 
-  let seconds = s1 + s2;
-  let minutes = m1 + m2 + Math.floor(seconds / 60);
-  let hours = h1 + h2 + Math.floor(minutes / 60);
+    seconds = seconds % 60;
+    minutes = minutes % 60;
 
-  seconds = seconds % 60;
-  minutes = minutes % 60;
-
-  const pad = (n: number) => n.toString().padStart(2, '0');
-  return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
-}
-
-
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+  }
 
   private async updateToken(
     tokenId: string,
@@ -180,20 +178,20 @@ private addTimeStrings(time1: string, time2: string): string {
       }),
       transferDepartmentId
         ? prisma.ht_department.findUniqueOrThrow({
-          where: { hash_id: transferDepartmentId, deleted_at: null },
-          select: {
-            id: true,
-            hash_id: true,
-            dept_english_name: true,
-            dept_regional_name: true,
-          },
-        })
+            where: { hash_id: transferDepartmentId, deleted_at: null },
+            select: {
+              id: true,
+              hash_id: true,
+              dept_english_name: true,
+              dept_regional_name: true,
+            },
+          })
         : Promise.resolve(null),
       transferCounterId
         ? prisma.ht_counter_filter.findUniqueOrThrow({
-          where: { hash_id: transferCounterId, deleted_at: null },
-          select: { id: true, hash_id: true, counter_no: true },
-        })
+            where: { hash_id: transferCounterId, deleted_at: null },
+            select: { id: true, hash_id: true, counter_no: true },
+          })
         : Promise.resolve(null),
     ]);
 
@@ -315,7 +313,7 @@ private addTimeStrings(time1: string, time2: string): string {
         where: {
           hash_id: tokenId,
           deleted_at: null,
-        }
+        },
       });
     }
 
@@ -341,11 +339,15 @@ private addTimeStrings(time1: string, time2: string): string {
             },
           },
         });
-        
-        if (!counterDetail.transfer_token_next_click) {
 
+        if (!counterDetail.transfer_token_next_click) {
           if (tokenDetails) {
-            const timeDiff = this.getTimeDifference((tokenDetails.hold_out_time ? tokenDetails.hold_out_time : tokenDetails.token_calling_time).toISOString());
+            const timeDiff = this.getTimeDifference(
+              (tokenDetails.hold_out_time
+                ? tokenDetails.hold_out_time
+                : tokenDetails.token_calling_time
+              ).toISOString()
+            );
             const timeTaken = this.addTimeStrings(
               tokenDetails.time_taken,
               timeDiff
@@ -385,10 +387,7 @@ private addTimeStrings(time1: string, time2: string): string {
             });
 
             if (!tokenDetails) {
-              throw new HttpBadRequestError(
-                'Transfered token not found!'
-              );
-
+              throw new HttpBadRequestError('Transfered token not found!');
             }
 
             await prisma.tokens.update({
@@ -409,7 +408,7 @@ private addTimeStrings(time1: string, time2: string): string {
                 id: currentUser.counter_details.id,
                 hash_id: currentUser.counter_details.hash_id,
                 counter_no: currentUser.counter_details.counter_no,
-              }
+              },
             });
 
             const roomName = `company:${currentUser.company.id}:series:${tokenDetails.series_id}`;
@@ -420,11 +419,13 @@ private addTimeStrings(time1: string, time2: string): string {
             );
 
             return {
-              token: transferedCallingToken
-            }
+              token: transferedCallingToken,
+            };
           }
 
-          const tokenData: ITokenData[] = await tokenManager.priorityTokens(data.filter_series_id);
+          const tokenData: ITokenData[] = await tokenManager.priorityTokens(
+            data.filter_series_id
+          );
           if (tokenData.length === 0) {
             return tokenData;
           }
@@ -467,7 +468,6 @@ private addTimeStrings(time1: string, time2: string): string {
           return {
             token: clonePriorityToken,
           };
-
         } else {
           if (!tokenId) {
             throw new HttpBadRequestError(
@@ -519,15 +519,16 @@ private addTimeStrings(time1: string, time2: string): string {
           );
         }
 
-        const tokenDetail = await tokenManager.getTokenById(tokenDetails.hash_id);
+        const tokenDetail = await tokenManager.getTokenById(
+          tokenDetails.hash_id
+        );
         if (!tokenDetail || !tokenDetail.token_calling_time) {
           throw new HttpBadRequestError('Token not found!');
         }
-        const timeDiff = this.getTimeDifference(tokenDetail.token_calling_time.toISOString())
-        const timeTaken = this.addTimeStrings(
-          tokenDetail.time_taken,
-          timeDiff
+        const timeDiff = this.getTimeDifference(
+          tokenDetail.token_calling_time.toISOString()
         );
+        const timeTaken = this.addTimeStrings(tokenDetail.time_taken, timeDiff);
 
         return await this.updateToken(
           tokenDetails.hash_id,
@@ -538,9 +539,9 @@ private addTimeStrings(time1: string, time2: string): string {
       }
 
       case 'BREAK': {
-        if(!tokenDetails){
-          return null
-        } 
+        if (!tokenDetails) {
+          return null;
+        }
         if (tokenDetails.token_status !== TokenStatus.ACTIVE) {
           throw new HttpBadRequestError(
             'Only ACTIVE tokens can be marked as COMPLETED!'
@@ -585,5 +586,30 @@ private addTimeStrings(time1: string, time2: string): string {
       default:
         throw new HttpBadRequestError(`Invalid status value: ${data.status}`);
     }
+  }
+
+  public async getActiveToken(currentUser: UserResponseDto): Promise<tokenDto | any> {
+    const tokens = new CompanyTokenManager(
+      currentUser.company.hash_id,
+      currentUser.counter_details.hash_id
+    );
+
+    const tokenDetails = tokens.getTokensByStatus(TokenStatus.ACTIVE);
+
+    const activeToken = (await tokenDetails)
+      .filter((token) =>
+        moment(token.token_generate_time).isSame(moment(), 'day')
+      )
+      .sort(
+        (latestToken, nextToken) =>
+          moment(nextToken.token_generate_time).valueOf() -
+          moment(latestToken.token_generate_time).valueOf()
+      )[0];
+
+    if (!activeToken) {
+      return null;
+    }
+
+    return activeToken;
   }
 }
