@@ -38,9 +38,10 @@ const expressJSDocSwaggerConfig = {
     },
   ],
   security: {
-    BearerAuth: {
+    Authorization: {
       type: 'http',
       scheme: 'bearer',
+      bearerFormat: 'JWT',
     },
   },
   baseDir,

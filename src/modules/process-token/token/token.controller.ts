@@ -32,7 +32,28 @@ export default class TokenController extends Api {
         'Token status updated successfully.'
       );
     } catch (e) {
-     _next(e);
+      _next(e);
+    }
+  };
+
+  public getActiveToken = async (
+    req: Request,
+    res: CustomResponse<tokenDto>,
+    next: NextFunction
+  ) => {
+    try {
+      const activeToken = await this.tokenService.getActiveToken(
+        res.locals.currentUser
+      );
+
+      this.send(
+        res,
+        activeToken,
+        HttpStatusCode.Ok,
+        'Active token get successfully.'
+      );
+    } catch (e) {
+      next(e);
     }
   };
 }
